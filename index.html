@@ -2720,7 +2720,29 @@ Meine Analyse-Aufgabe an dich:
         function gmkAbN(x){return String(x).replace(/_/g,'-');}
         function gmkAbK(x){return String(x).replace(/_/g,'-');}
 
+        function gmkApplyEpoch(rev) {
+            if (rev === currentRoomRevision) return;
+            currentRoomRevision = rev;
+            safeSetItem('gmk_room_rev', String(rev));
+            Object.keys(voteCounts).forEach(k => { voteCounts[k] = 0; });
+            saveLocalBackupCounts();
+            renderVotingAndFeedbackUI();
+        }
+
+        async function gmkSyncEpoch() {
+            try {
+                const res = await fetch(`https://abacus.jasoncameron.dev/get/${gmkAbN(VOTE_NAMESPACE_BASE)}/room-rev`);
+                if (res.ok) {
+                    const d = await res.json();
+                    if (typeof d.value === 'number') gmkApplyEpoch(1 + d.value);
+                } else if (res.status === 404) {
+                    gmkApplyEpoch(1);
+                }
+            } catch (e) {}
+        }
+
         async function submitLiveVote(questionGroup, counterKey) {
+            await gmkSyncEpoch();
             if (hasVotedOnQuestion(questionGroup)) return;
 
             safeSetItem(getVoteStorageKey(questionGroup), counterKey);
@@ -2743,6 +2765,7 @@ Meine Analyse-Aufgabe an dich:
         }
 
         async function syncAllVotesFromCloud(manualTrigger) {
+            await gmkSyncEpoch();
             const namespace = `${VOTE_NAMESPACE_BASE}_r${currentRoomRevision}`;
             const keys = Object.keys(voteCounts);
             let failed = 0;
@@ -2819,12 +2842,15 @@ Meine Analyse-Aufgabe an dich:
             }
         }
 
-        function adminResetAllCountersToZero() {
-            currentRoomRevision++;
-            safeSetItem('gmk_room_rev', String(currentRoomRevision));
-            Object.keys(voteCounts).forEach(k => { voteCounts[k] = 0; });
-            saveLocalBackupCounts();
-            renderVotingAndFeedbackUI();
+        async function adminResetAllCountersToZero() {
+            gmkApplyEpoch(currentRoomRevision + 1);
+            try {
+                const res = await fetch(`https://abacus.jasoncameron.dev/hit/${gmkAbN(VOTE_NAMESPACE_BASE)}/room-rev`);
+                if (res.ok) {
+                    const d = await res.json();
+                    if (typeof d.value === 'number') gmkApplyEpoch(1 + d.value);
+                }
+            } catch (e) {}
         }
 
         function adminUnlockLocalDeviceVote() {
