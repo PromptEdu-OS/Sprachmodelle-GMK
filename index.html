@@ -2562,7 +2562,7 @@ Meine Analyse-Aufgabe an dich:
             }, 1200);
         }
 
-        const VOTE_NAMESPACE_BASE = 'gmk_ki_ws_2026_v3';
+        const VOTE_NAMESPACE_BASE = 'gmk_promptedu_2026_v4';
         let currentRoomRevision = parseInt(safeGetItem('gmk_room_rev', '1'), 10);
 
         const mainPollOptions = [
@@ -2717,6 +2717,9 @@ Meine Analyse-Aufgabe an dich:
             }).join('');
         }
 
+        function gmkAbN(x){return String(x).replace(/_/g,'-');}
+        function gmkAbK(x){return String(x).replace(/_/g,'-');}
+
         async function submitLiveVote(questionGroup, counterKey) {
             if (hasVotedOnQuestion(questionGroup)) return;
 
@@ -2727,11 +2730,11 @@ Meine Analyse-Aufgabe an dich:
 
             const namespace = `${VOTE_NAMESPACE_BASE}_r${currentRoomRevision}`;
             try {
-                const res = await fetch(`https://api.counterapi.dev/v1/${namespace}/${counterKey}/up`);
+                const res = await fetch(`https://abacus.jasoncameron.dev/hit/${gmkAbN(namespace)}/${gmkAbK(counterKey)}`);
                 if (res.ok) {
                     const data = await res.json();
-                    if (typeof data.count === 'number') {
-                        voteCounts[counterKey] = data.count;
+                    if (typeof data.value === 'number') {
+                        voteCounts[counterKey] = data.value;
                         saveLocalBackupCounts();
                         renderVotingAndFeedbackUI();
                     }
@@ -2742,21 +2745,23 @@ Meine Analyse-Aufgabe an dich:
         async function syncAllVotesFromCloud(manualTrigger) {
             const namespace = `${VOTE_NAMESPACE_BASE}_r${currentRoomRevision}`;
             const keys = Object.keys(voteCounts);
+            let failed = 0;
 
             await Promise.allSettled(keys.map(async (k) => {
                 try {
-                    const res = await fetch(`https://api.counterapi.dev/v1/${namespace}/${k}/`);
+                    const res = await fetch(`https://abacus.jasoncameron.dev/get/${gmkAbN(namespace)}/${gmkAbK(k)}`);
                     if (res.ok) {
                         const data = await res.json();
-                        if (typeof data.count === 'number') {
-                            voteCounts[k] = data.count;
+                        if (typeof data.value === 'number') {
+                            voteCounts[k] = data.value;
                         }
                     }
-                } catch (e) {}
+                } catch (e) { failed++; }
             }));
 
             saveLocalBackupCounts();
             renderVotingAndFeedbackUI();
+            if (failed === keys.length) { const b = document.getElementById('active-room-badge'); if (b) b.textContent += ' • offline (nur lokal)'; }
         }
 
         function saveLocalBackupCounts() {
@@ -2972,5 +2977,6 @@ setTimeout(function(){stag($('#view-sources')||d)},300);
 d.addEventListener('visibilitychange',function(){d.documentElement.classList.toggle('gx-pause',d.hidden)});
 }catch(e){}})();
 </script>
+<script id="gx-poll">setInterval(function(){try{var v=document.getElementById('lab-content-voting');if(v&&!v.classList.contains('hidden')&&!document.hidden&&typeof syncAllVotesFromCloud==='function')syncAllVotesFromCloud(false)}catch(e){}},10000);</script>
 </body>
 </html>
