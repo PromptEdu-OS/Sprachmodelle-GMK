@@ -2720,8 +2720,15 @@ Meine Analyse-Aufgabe an dich:
         function gmkAbN(x){return String(x).replace(/_/g,'-');}
         function gmkAbK(x){return String(x).replace(/_/g,'-');}
 
+        function gmkWipeLocalVotes() {
+            try {
+                Object.keys(localStorage).filter(k => k.startsWith('voted_' + VOTE_NAMESPACE_BASE) || k.startsWith('counts_' + VOTE_NAMESPACE_BASE)).forEach(k => localStorage.removeItem(k));
+            } catch (e) {}
+        }
+
         function gmkApplyEpoch(rev) {
             if (rev === currentRoomRevision) return;
+            gmkWipeLocalVotes();
             currentRoomRevision = rev;
             safeSetItem('gmk_room_rev', String(rev));
             Object.keys(voteCounts).forEach(k => { voteCounts[k] = 0; });
@@ -2731,12 +2738,11 @@ Meine Analyse-Aufgabe an dich:
 
         async function gmkSyncEpoch() {
             try {
-                const res = await fetch(`https://abacus.jasoncameron.dev/get/${gmkAbN(VOTE_NAMESPACE_BASE)}/room-rev`);
+                const res = await fetch(`https://abacus.jasoncameron.dev/get/${gmkAbN(VOTE_NAMESPACE_BASE)}/room-rev`, { cache: 'no-store' });
                 if (res.ok) {
                     const d = await res.json();
-                    if (typeof d.value === 'number') gmkApplyEpoch(1 + d.value);
-                } else if (res.status === 404) {
-                    gmkApplyEpoch(1);
+                    // Nur nach oben wechseln: ein veralteter Wert darf nie auf einen alten Raum zurückspringen lassen
+                    if (typeof d.value === 'number' && 1 + d.value > currentRoomRevision) gmkApplyEpoch(1 + d.value);
                 }
             } catch (e) {}
         }
@@ -2752,7 +2758,7 @@ Meine Analyse-Aufgabe an dich:
 
             const namespace = `${VOTE_NAMESPACE_BASE}_r${currentRoomRevision}`;
             try {
-                const res = await fetch(`https://abacus.jasoncameron.dev/hit/${gmkAbN(namespace)}/${gmkAbK(counterKey)}`);
+                const res = await fetch(`https://abacus.jasoncameron.dev/hit/${gmkAbN(namespace)}/${gmkAbK(counterKey)}`, { cache: 'no-store' });
                 if (res.ok) {
                     const data = await res.json();
                     if (typeof data.value === 'number') {
@@ -2772,7 +2778,7 @@ Meine Analyse-Aufgabe an dich:
 
             await Promise.allSettled(keys.map(async (k) => {
                 try {
-                    const res = await fetch(`https://abacus.jasoncameron.dev/get/${gmkAbN(namespace)}/${gmkAbK(k)}`);
+                    const res = await fetch(`https://abacus.jasoncameron.dev/get/${gmkAbN(namespace)}/${gmkAbK(k)}`, { cache: 'no-store' });
                     if (res.ok) {
                         const data = await res.json();
                         if (typeof data.value === 'number') {
@@ -2843,14 +2849,20 @@ Meine Analyse-Aufgabe an dich:
         }
 
         async function adminResetAllCountersToZero() {
-            gmkApplyEpoch(currentRoomRevision + 1);
-            try {
-                const res = await fetch(`https://abacus.jasoncameron.dev/hit/${gmkAbN(VOTE_NAMESPACE_BASE)}/room-rev`);
-                if (res.ok) {
-                    const d = await res.json();
-                    if (typeof d.value === 'number') gmkApplyEpoch(1 + d.value);
-                }
-            } catch (e) {}
+            const url = `https://abacus.jasoncameron.dev/hit/${gmkAbN(VOTE_NAMESPACE_BASE)}/room-rev`;
+            let ok = false;
+            for (let i = 0; i < 2 && !ok; i++) {
+                try {
+                    const res = await fetch(url, { cache: 'no-store' });
+                    if (res.ok) {
+                        const d = await res.json();
+                        if (typeof d.value === 'number') { gmkApplyEpoch(1 + d.value); ok = true; }
+                    }
+                } catch (e) {}
+            }
+            if (!ok) gmkApplyEpoch(currentRoomRevision + 1);
+            renderVotingAndFeedbackUI();
+            alert(ok ? 'Neuer Raum #GMK-' + currentRoomRevision + ' wurde an alle Geräte gesendet. Alles startet bei null.' : 'Achtung: Der Zähler-Dienst war nicht erreichbar. Nur dieses Gerät wurde zurückgesetzt. Bitte erneut versuchen.');
         }
 
         function adminUnlockLocalDeviceVote() {
